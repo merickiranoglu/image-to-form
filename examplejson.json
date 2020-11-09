@@ -1,0 +1,42 @@
+{   
+  "width": 800,
+  "height": 500,
+  "entity1": {
+      "type": "textbox",
+      "boundingBoxMinX": 120,
+      "boundingBoxMinY": 60,
+      "boundingBoxMaxX": 400,
+      "boundingBoxMaxY": 80
+  },
+  "entity2": {
+      "type": "textbox",
+      "boundingBoxMinX": 120,
+      "boundingBoxMinY": 90,
+      "boundingBoxMaxX": 400,
+      "boundingBoxMaxY": 110
+  },
+  "entity3": {
+      "type": "button",
+      "boundingBoxMinX": 30,
+      "boundingBoxMinY": 10,
+      "boundingBoxMaxX": 120,
+      "boundingBoxMaxY": 40,
+      "text": "Click me!"
+  },
+  "entity4": {
+      "type": "label",
+      "boundingBoxMinX": 30,
+      "boundingBoxMinY": 60,
+      "boundingBoxMaxX": 110,
+      "boundingBoxMaxY": 80,
+      "text": "Label 1 :"
+  },
+  "entity5": {
+      "type": "label",
+      "boundingBoxMinX": 30,
+      "boundingBoxMinY": 90,
+      "boundingBoxMaxX": 110,
+      "boundingBoxMaxY": 110,
+      "text": "Label 2 :"
+  }
+}
