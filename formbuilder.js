@@ -70,7 +70,8 @@ imgElement.onload = function () {
       entityID++
     }
   }
-
+   divHtmlOutput.style.display = "block";
+   divParsedForm.style.display = "block";
 	
 	//oluşturduğumuz entityleri divParsedForm'a koyup görelim.
   divParsedForm.style.width = src.cols + "px";
@@ -203,8 +204,7 @@ function RunTesseract(Tesseract) {
    console.log(result.data);
 
    await worker.terminate();
-   divHtmlOutput.style.display = "block";
-   divParsedForm.style.display = "block";
+
  }
 }
 
