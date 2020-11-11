@@ -10,6 +10,7 @@ inputElement.addEventListener('change', (e) => {
 let source;
 let process;
 let output;
+
 let entities = [];
 let threshold = 200;
 
@@ -30,15 +31,16 @@ imgElement.onload = function() {
 async function RunOpenCV(){
     
     source = cv.imread(imgElement);
-    BuildDestinationImage(200, 255);
+    output =  source.clone(); 
+    
+    BuildGrayScaleProcessImage(200, 255);
     MakeEntities(threshold); 
     
     cv.imshow('imageCanvas', output);
 }
 
-function BuildDestinationImage(low, high){
+function BuildGrayScaleProcessImage(low, high){
     
-    output =  source.clone(); //cv.Mat.zeros(source.cols, source.rows, cv.CV_8UC3);
     process = source.clone();
     cv.cvtColor(process, process, cv.COLOR_RGBA2GRAY, 0);
     cv.threshold(process, process, low, high, cv.THRESH_BINARY);
@@ -135,8 +137,6 @@ function DetectEntityType()
   //burda artık textbox mı, label mı, button mu ona karar vermek gerekiyor.
   return 'textbox';
 }
-
-
 
 // Form Builder
 function BuildForms(){
