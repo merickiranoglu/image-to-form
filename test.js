@@ -90,18 +90,16 @@ function MakeEntity(contour, threshold){
         let point2 = new cv.Point(rect.x + rect.width, rect.y + rect.height);
        
         cv.rectangle(destination, point1, point2, rectangleColor, 2, cv.LINE_AA, 0);
-        console.log('rect')
         console.log(rect)
 
         newEntity.type = DetectEntityType(); //returns 'textbox', 'button' or 'label'
-        
         newEntity.boundingBoxMinX = point1.x;
         newEntity.boundingBoxMinY = point1.y;
         newEntity.boundingBoxMaxX = point2.x;
         newEntity.boundingBoxMaxY = point2.y;
         newEntity.id = createUUID();
         
-      return newEntity;
+        return newEntity;
     }
 }
 
@@ -120,26 +118,12 @@ function BuildForms(){
     let formWidth = source.cols + "px";
     let formHeight = source.rows + "px";
     
-    
     divParsedForm.style.width = formWidth;
     divParsedForm.style.height = formHeight;
     divParsedForm.style.border = "2px black solid";
 
     entities.forEach(entity => {
-        switch (entity.type) {
-        case "label":
-            console.log("this entity is a label!");
-            GenerateLabel(entity.id, entity);
-            break;
-        case "textbox":
-            console.log("this entity is a textbox!");
-            GenerateTextbox(entity.id, entity);
-            break;
-        case "button":
-            console.log("this entity is a button!");
-            GenerateButton(entity.id, entity);
-            break;
-        }
+        GenerateForm(entity);
     });
     
     var textArea = document.createElement("TEXTAREA");
@@ -153,11 +137,22 @@ function BuildForms(){
 
 }
 
-function GenerateTextbox(id, entity) {
+function GenerateForm(entity){
+    
+    console.log(`this entity is a ${entity.type}`);
+    var forms = {
+        'label': GenerateLabel(entity),
+        'textbox': GenerateTextbox(entity),
+        'button' : GenerateButton(entity),
+    }
+    return forms[entity.type];
+}
+
+function GenerateTextbox(entity) {
   console.log("Generating textbox...");
   var textboxElement = document.createElement("input");
   textboxElement.setAttribute("type", "text");
-  textboxElement.setAttribute("id", id);
+  textboxElement.setAttribute("id", entity.id);
 
   textboxElement.style.position = "absolute";
   textboxElement.style.left = entity.boundingBoxMinX + "px";
@@ -174,11 +169,11 @@ function GenerateTextbox(id, entity) {
   console.log("Textbox generated!");
 }
 
-function GenerateButton(id, entity) {
+function GenerateButton(entity) {
   console.log("Generating button...");
   var buttonElement = document.createElement("button");
   buttonElement.setAttribute("type", "button");
-  buttonElement.setAttribute("id", id);
+  buttonElement.setAttribute("id", entity.id);
 
   buttonElement.style.position = "absolute";
   buttonElement.style.left = entity.boundingBoxMinX + "px";
@@ -191,17 +186,18 @@ function GenerateButton(id, entity) {
   buttonElement.style.height = height + "px";
   buttonElement.style.border = "1px solid black";
 
-  var buttonText = document.createTextNode(val.text);
+    //   var buttonText = document.createTextNode(val.text);
+  var buttonText = document.createTextNode("button");
   buttonElement.appendChild(buttonText);
   divParsedForm.appendChild(buttonElement);
   console.log("Button generated!");
 }
 
-function GenerateLabel(id, entity) {
+function GenerateLabel(entity) {
   console.log("Generating label...");
   var buttonElement = document.createElement("label");
   buttonElement.setAttribute("type", "label");
-  buttonElement.setAttribute("id", id);
+  buttonElement.setAttribute("id", entity.id);
 
   buttonElement.style.position = "absolute";
   buttonElement.style.left = entity.boundingBoxMinX + "px";
