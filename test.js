@@ -8,9 +8,10 @@ inputElement.addEventListener('change', (e) => {
 }, false);
 
 let source;
-let destination;
+let process;
+let output;
 let entities = [];
-let threshold = 500;
+let threshold = 200;
 
 function onOpenCvReady() {
   document.body.classList.remove("loading");
@@ -19,24 +20,28 @@ function onOpenCvReady() {
 imgElement.onload = function() {
     
     RunOpenCV();
+    
+    // Formlar build edilmeden önce, CV Entityleri ve tessaracttan gelen entityleri beraber kullanmak gerekecek.
     BuildForms();
-    //await RunTesseract(Tesseract);
+    //RunTesseract(Tesseract);
 }
 
+// OpenCV
 async function RunOpenCV(){
     
     source = cv.imread(imgElement);
     BuildDestinationImage(200, 255);
     MakeEntities(threshold); 
     
-    cv.imshow('imageCanvas', destination);
+    cv.imshow('imageCanvas', output);
 }
 
 function BuildDestinationImage(low, high){
     
-    destination =  cv.Mat.zeros(source.cols, source.rows, cv.CV_8UC3);
-    cv.cvtColor(source, destination, cv.COLOR_RGBA2GRAY, 0);
-    cv.threshold(destination, destination, low, high, cv.THRESH_BINARY);
+    output =  source.clone(); //cv.Mat.zeros(source.cols, source.rows, cv.CV_8UC3);
+    process = source.clone();
+    cv.cvtColor(process, process, cv.COLOR_RGBA2GRAY, 0);
+    cv.threshold(process, process, low, high, cv.THRESH_BINARY);
 }
 
 function FindContours(dst){
@@ -65,9 +70,30 @@ function FindApproximatePolies(contours){
     return poly;
 }
 
+function FindCircles()
+{
+    let otherMat = source.clone();
+    let circleMat = new cv.Mat();
+    
+    cv.cvtColor(otherMat,otherMat, cv.COLOR_RGBA2GRAY);
+    cv.HoughCircles(otherMat, circleMat, cv.HOUGH_GRADIENT, 1, 1, 100, 30, 1, 50);
+
+    for(let i = 0; i < circleMat.cols; i++){
+
+        let x = circleMat.data32F[i * 3];
+        let y = circleMat.data32F[i * 3 + 1];
+        let radius = circleMat.data32F[i * 3 + 2];
+        
+        //if(radius < 20)
+        let center = new cv.Point(x,y);
+        cv.circle(output, center, radius, [0, 255,0,255], 3);    
+    }
+    
+}
+
 function MakeEntities(threshold){
     
-    let contours = FindContours(destination);
+    let contours = FindContours(process);
     let poly = FindApproximatePolies(contours);
     for (let i = 0; i < contours.size(); ++i) {
         var entity = MakeEntity(contours.get(i), threshold);
@@ -75,11 +101,12 @@ function MakeEntities(threshold){
             entities.push(entity);
         }
     }
+    FindCircles();
 }
 
 function MakeEntity(contour, threshold){
     
-    let rectangleColor = new cv.Scalar(150, 0, 0);
+    let rectangleColor = new cv.Scalar(0, 0, 0);
     
     if (cv.contourArea(contour, false) > threshold) {
         
@@ -89,7 +116,7 @@ function MakeEntity(contour, threshold){
         let point1 = new cv.Point(rect.x, rect.y);
         let point2 = new cv.Point(rect.x + rect.width, rect.y + rect.height);
        
-        cv.rectangle(destination, point1, point2, rectangleColor, 2, cv.LINE_AA, 0);
+        cv.rectangle(output, point1, point2, rectangleColor, 1, cv.LINE_AA, 0);
         console.log(rect)
 
         newEntity.type = DetectEntityType(); //returns 'textbox', 'button' or 'label'
@@ -103,12 +130,15 @@ function MakeEntity(contour, threshold){
     }
 }
 
-function DetectEntityType()  {
+function DetectEntityType()  
+{
   //burda artık textbox mı, label mı, button mu ona karar vermek gerekiyor.
-  return 'textbox'
+  return 'textbox';
 }
 
 
+
+// Form Builder
 function BuildForms(){
     
 	//oluşturduğumuz entityleri divParsedForm'a koyup görelim.
@@ -123,7 +153,7 @@ function BuildForms(){
     divParsedForm.style.border = "2px black solid";
 
     entities.forEach(entity => {
-        GenerateForm(entity);
+        GenerateFormElement(entity, divParsedForm);
     });
     
     var textArea = document.createElement("TEXTAREA");
@@ -137,18 +167,20 @@ function BuildForms(){
 
 }
 
-function GenerateForm(entity){
+function GenerateFormElement(entity, parent){
     
     console.log(`this entity is a ${entity.type}`);
+    
     var forms = {
-        'label': GenerateLabel(entity),
-        'textbox': GenerateTextbox(entity),
-        'button' : GenerateButton(entity),
+        'label': GenerateLabel,
+        'textbox': GenerateTextbox,
+        'button' : GenerateButton,
     }
-    return forms[entity.type];
+    if(forms[entity.type])
+       forms[entity.type](entity, parent);
 }
 
-function GenerateTextbox(entity) {
+function GenerateTextbox(entity, parent) {
   console.log("Generating textbox...");
   var textboxElement = document.createElement("input");
   textboxElement.setAttribute("type", "text");
@@ -165,11 +197,11 @@ function GenerateTextbox(entity) {
   textboxElement.style.width = width + "px";
   textboxElement.style.height = height + "px";
 
-  divParsedForm.appendChild(textboxElement);
+  parent.appendChild(textboxElement);
   console.log("Textbox generated!");
 }
 
-function GenerateButton(entity) {
+function GenerateButton(entity, parent) {
   console.log("Generating button...");
   var buttonElement = document.createElement("button");
   buttonElement.setAttribute("type", "button");
@@ -189,33 +221,34 @@ function GenerateButton(entity) {
     //   var buttonText = document.createTextNode(val.text);
   var buttonText = document.createTextNode("button");
   buttonElement.appendChild(buttonText);
-  divParsedForm.appendChild(buttonElement);
+  parent.appendChild(buttonElement);
   console.log("Button generated!");
 }
 
-function GenerateLabel(entity) {
+function GenerateLabel(entity, parent) {
   console.log("Generating label...");
-  var buttonElement = document.createElement("label");
-  buttonElement.setAttribute("type", "label");
-  buttonElement.setAttribute("id", entity.id);
+  var labelElement = document.createElement("label");
+  labelElement.setAttribute("type", "label");
+  labelElement.setAttribute("id", entity.id);
 
-  buttonElement.style.position = "absolute";
-  buttonElement.style.left = entity.boundingBoxMinX + "px";
-  buttonElement.style.bottom = entity.boundingBoxMinY + "px";
+  labelElement.style.position = "absolute";
+  labelElement.style.left = entity.boundingBoxMinX + "px";
+  labelElement.style.bottom = entity.boundingBoxMinY + "px";
 
   var width = entity.boundingBoxMaxX - entity.boundingBoxMinX;
   var height = entity.boundingBoxMaxY - entity.boundingBoxMinY;
 
-  buttonElement.style.width = width + "px";
-  buttonElement.style.height = height + "px";
+  labelElement.style.width = width + "px";
+  labelElement.style.height = height + "px";
 
-  var buttonText = document.createTextNode(entity.text);
-  buttonElement.appendChild(buttonText);
-  divParsedForm.appendChild(buttonElement);
+  var labelText = document.createTextNode(entity.text);
+  labelElement.appendChild(labelText);
+  parent.appendChild(labelElement);
   console.log("Label generated!");
 }
 
-async function RunTesseract(Tesseract) {
+// Tesseract
+function RunTesseract(Tesseract) {
   
     const exampleImage = imgElement.src;
 
@@ -223,7 +256,7 @@ async function RunTesseract(Tesseract) {
     logger: m => console.log(m)
     });
     Tesseract.setLogging(true);
-    await work();    
+    work();    
 
     async function work() {
         await worker.load();
@@ -237,11 +270,8 @@ async function RunTesseract(Tesseract) {
 
         console.log(result.data);
         await worker.terminate();
-        divHtmlOutput.style.display = "block";
-        divParsedForm.style.display = "block";
     }
 }
-
 
 function createUUID() {
    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
