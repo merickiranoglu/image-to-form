@@ -14,18 +14,25 @@ let output;
 let entities = [];
 let threshold = 200;
 
+let TextResult;
+let ImageScale;
+
 function onOpenCvReady() {
   document.body.classList.remove("loading");
 }
 
 imgElement.onload = function() {
     
+    ImageScale = [this.naturalWidth / this.width, this.naturalHeight / this.height];
     RunOpenCV();
+    RunTesseract(Tesseract);
     
     // Formlar build edilmeden önce, CV Entityleri ve tessaracttan gelen entityleri beraber kullanmak gerekecek.
     BuildForms();
-    //RunTesseract(Tesseract);
+    
+    //cv.imshow('imageCanvas', output);
 }
+
 
 // OpenCV
 async function RunOpenCV(){
@@ -36,7 +43,7 @@ async function RunOpenCV(){
     BuildGrayScaleProcessImage(200, 255);
     MakeEntities(threshold); 
     
-    cv.imshow('imageCanvas', output);
+    //cv.imshow('imageCanvas', output);
 }
 
 function BuildGrayScaleProcessImage(low, high){
@@ -180,6 +187,7 @@ function GenerateFormElement(entity, parent){
        forms[entity.type](entity, parent);
 }
 
+
 function GenerateTextbox(entity, parent) {
   console.log("Generating textbox...");
   var textboxElement = document.createElement("input");
@@ -247,6 +255,7 @@ function GenerateLabel(entity, parent) {
   console.log("Label generated!");
 }
 
+
 // Tesseract
 function RunTesseract(Tesseract) {
   
@@ -268,7 +277,26 @@ function RunTesseract(Tesseract) {
 
         result = await worker.recognize(exampleImage);
 
-        console.log(result.data);
+        TextResult = result.data;
+        
+        let rectangleColor = new cv.Scalar(255, 0, 0);
+        
+        console.log(TextResult);
+        
+        
+        for (let i = 0; i < TextResult.words.length; i++) {
+
+            word = TextResult.words[i];
+            
+            console.log(word);
+            p1 = new cv.Point(word.bbox.x0 / ImageScale[0], word.bbox.y0 / ImageScale[1]);
+            p2 = new cv.Point(word.bbox.x1 / ImageScale[0], word.bbox.y1 / ImageScale[1]);
+            
+            cv.rectangle(output, p1, p2, rectangleColor, 1, cv.LINE_AA, 0);
+        }
+        cv.imshow('imageCanvas', output);
+        
+        //console.log(result.data);
         await worker.terminate();
     }
 }
