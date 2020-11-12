@@ -17,49 +17,73 @@ let threshold = 200;
 let TextResult;
 let ImageScale;
 
+
+
 function onOpenCvReady() {
   document.body.classList.remove("loading");
 }
 
-imgElement.onload = function() {
+imgElement.onload = async function() {
+    
+    source = cv.imread(imgElement);
+    output = source.clone(); 
+    process = source.clone();
     
     ImageScale = [this.naturalWidth / this.width, this.naturalHeight / this.height];
+    
     RunOpenCV();
-    RunTesseract(Tesseract);
+    await RunTesseract(Tesseract);
+    DrawEntities(output);
     
-    // Formlar build edilmeden önce, CV Entityleri ve tessaracttan gelen entityleri beraber kullanmak gerekecek.
-    BuildForms();
-    
-    //cv.imshow('imageCanvas', output);
+    BuildForms();    
 }
-
 
 // OpenCV
 async function RunOpenCV(){
     
-    source = cv.imread(imgElement);
-    output =  source.clone(); 
-    
     BuildGrayScaleProcessImage(200, 255);
-    MakeEntities(threshold); 
+    AddContours();
+    AddCircles();
     
-    //cv.imshow('imageCanvas', output);
 }
 
 function BuildGrayScaleProcessImage(low, high){
     
-    process = source.clone();
     cv.cvtColor(process, process, cv.COLOR_RGBA2GRAY, 0);
     cv.threshold(process, process, low, high, cv.THRESH_BINARY);
+}
+
+function AddContours(){
+    
+    let contours = FindContours(process);
+    for (let i = 0; i < contours.size(); i++) {
+        
+        const contour = contours.get(i);
+        if (cv.contourArea(contour, false) > threshold) {
+            let rect = cv.boundingRect(contour);
+            
+            entities.push( 
+            {
+                type : 'contour',
+                boundingBoxMinX : rect.x,
+                boundingBoxMinY : rect.y,
+                boundingBoxMaxX : rect.x + rect.width,
+                boundingBoxMaxY : rect.y + rect.height,
+                id : createUUID()
+            });
+        }
+    }
 }
 
 function FindContours(dst){
     
     let contours = new cv.MatVector();
     let hierarchy = new cv.Mat();
-    cv.findContours(dst, contours,
+    cv.findContours(
+        dst, contours,
         hierarchy, cv.RETR_TREE,
-        cv.CHAIN_APPROX_SIMPLE);
+        cv.CHAIN_APPROX_SIMPLE
+    );
         
     return contours;
 }
@@ -79,70 +103,96 @@ function FindApproximatePolies(contours){
     return poly;
 }
 
-function FindCircles()
-{
+function AddCircles(){
     let otherMat = source.clone();
     let circleMat = new cv.Mat();
     
     cv.cvtColor(otherMat,otherMat, cv.COLOR_RGBA2GRAY);
-    cv.HoughCircles(otherMat, circleMat, cv.HOUGH_GRADIENT, 1, 1, 100, 30, 1, 50);
+    cv.HoughCircles(otherMat, circleMat, cv.HOUGH_GRADIENT, 1, 50, 100, 30, 1, 20);
 
     for(let i = 0; i < circleMat.cols; i++){
-
+        
         let x = circleMat.data32F[i * 3];
         let y = circleMat.data32F[i * 3 + 1];
         let radius = circleMat.data32F[i * 3 + 2];
         
-        //if(radius < 20)
-        let center = new cv.Point(x,y);
-        cv.circle(output, center, radius, [0, 255,0,255], 3);    
+        entities.push(
+        {
+            type : 'circle',
+            radius,
+            x,
+            y,
+            id : createUUID()
+        });
     }
     
 }
 
-function MakeEntities(threshold){
+// Tesseract
+async function RunTesseract(Tesseract) {
+  
+    const exampleImage = imgElement.src;
+
+    const worker = Tesseract.createWorker({
+    logger: m => console.log(m)
+    });
+    Tesseract.setLogging(true);
+    await work();    
+
+    async function work() {
+        await worker.load();
+        await worker.loadLanguage('eng');
+        await worker.initialize('eng');
+
+        let result = await worker.detect(exampleImage); 
+        result = await worker.recognize(exampleImage);
+
+        let words = result.data.words;
+        
+        for (let i = 0; i < words.length; i++) {
+            
+            word = words[i];
+            console.log(word);
+            entities.push( 
+            {
+                type : 'word',
+                boundingBoxMinX : word.bbox.x0 / ImageScale[0],
+                boundingBoxMinY : word.bbox.y0 / ImageScale[1],
+                boundingBoxMaxX : word.bbox.x1 / ImageScale[0],
+                boundingBoxMaxY : word.bbox.y1 / ImageScale[1],
+                text : word.text, 
+                id : createUUID()
+            });
+        }
+        
+        await worker.terminate();
+    }
+}
+
+function DrawEntities(target){
     
-    let contours = FindContours(process);
-    let poly = FindApproximatePolies(contours);
-    for (let i = 0; i < contours.size(); ++i) {
-        var entity = MakeEntity(contours.get(i), threshold);
-        if(entity != null){
-            entities.push(entity);
+    let rectangleColor = new cv.Scalar(0, 0, 255);
+    let wordColor = new cv.Scalar(255, 0, 0);
+    let circleColor = new cv.Scalar(0,255,0);
+    
+    for (let i = 0; i < entities.length; i++) {
+        const entity = entities[i];
+        
+        if(entity.type ===  'circle'){
+            
+            let center = new cv.Point(entity.x, entity.y);
+            cv.circle(target, center, entity.radius, [0, 255,0,255], 3);    
+        }
+        else{
+            
+            let color = entity.type === 'word' ? wordColor : rectangleColor;
+            let p1 = new cv.Point(entity.boundingBoxMinX, entity.boundingBoxMinY);
+            let p2 = new cv.Point(entity.boundingBoxMaxX, entity.boundingBoxMaxY);
+            cv.rectangle(target, p1, p2, color, 1, cv.LINE_AA, 0);
         }
     }
-    FindCircles();
-}
-
-function MakeEntity(contour, threshold){
     
-    let rectangleColor = new cv.Scalar(0, 0, 0);
-    
-    if (cv.contourArea(contour, false) > threshold) {
-        
-		//bu contour'dan bir entity yaratacağım. bounding box kullanmak bence makul.
-        let newEntity = {}
-        let rect = cv.boundingRect(contour);
-        let point1 = new cv.Point(rect.x, rect.y);
-        let point2 = new cv.Point(rect.x + rect.width, rect.y + rect.height);
-       
-        cv.rectangle(output, point1, point2, rectangleColor, 1, cv.LINE_AA, 0);
-        console.log(rect)
-
-        newEntity.type = DetectEntityType(); //returns 'textbox', 'button' or 'label'
-        newEntity.boundingBoxMinX = point1.x;
-        newEntity.boundingBoxMinY = point1.y;
-        newEntity.boundingBoxMaxX = point2.x;
-        newEntity.boundingBoxMaxY = point2.y;
-        newEntity.id = createUUID();
-        
-        return newEntity;
-    }
-}
-
-function DetectEntityType()  
-{
-  //burda artık textbox mı, label mı, button mu ona karar vermek gerekiyor.
-  return 'textbox';
+    cv.imshow('imageCanvas', target);
 }
 
 // Form Builder
@@ -154,6 +204,8 @@ function BuildForms(){
     
     let formWidth = source.cols + "px";
     let formHeight = source.rows + "px";
+    
+    divParsedForm.style.left = 0 + "px";
     
     divParsedForm.style.width = formWidth;
     divParsedForm.style.height = formHeight;
@@ -178,15 +230,15 @@ function GenerateFormElement(entity, parent){
     
     console.log(`this entity is a ${entity.type}`);
     
-    var forms = {
-        'label': GenerateLabel,
-        'textbox': GenerateTextbox,
+    var forms = { 
+        'word': GenerateLabel,
+        'contour': GenerateTextbox,
         'button' : GenerateButton,
+        'circle' : GenerateRadioButton
     }
     if(forms[entity.type])
        forms[entity.type](entity, parent);
 }
-
 
 function GenerateTextbox(entity, parent) {
   console.log("Generating textbox...");
@@ -217,7 +269,7 @@ function GenerateButton(entity, parent) {
 
   buttonElement.style.position = "absolute";
   buttonElement.style.left = entity.boundingBoxMinX + "px";
-  buttonElement.style.bottom = entity.boundingBoxMinY + "px";
+  buttonElement.style.top = entity.boundingBoxMinY + "px";
 
   var width = entity.boundingBoxMaxX - entity.boundingBoxMinX;
   var height = entity.boundingBoxMaxY - entity.boundingBoxMinY;
@@ -234,71 +286,47 @@ function GenerateButton(entity, parent) {
 }
 
 function GenerateLabel(entity, parent) {
-  console.log("Generating label...");
-  var labelElement = document.createElement("label");
-  labelElement.setAttribute("type", "label");
-  labelElement.setAttribute("id", entity.id);
 
-  labelElement.style.position = "absolute";
-  labelElement.style.left = entity.boundingBoxMinX + "px";
-  labelElement.style.bottom = entity.boundingBoxMinY + "px";
+    if(entity.text.length <= 1)
+        return; 
+    
+    console.log("Generating label...");
+    var labelElement = document.createElement("label");
+    labelElement.setAttribute("type", "label");
+    labelElement.setAttribute("id", entity.id);
 
-  var width = entity.boundingBoxMaxX - entity.boundingBoxMinX;
-  var height = entity.boundingBoxMaxY - entity.boundingBoxMinY;
+    labelElement.style.position = "absolute";
+    labelElement.style.left = entity.boundingBoxMinX + "px";
+    labelElement.style.top = entity.boundingBoxMinY + "px";
 
-  labelElement.style.width = width + "px";
-  labelElement.style.height = height + "px";
+    var width = entity.boundingBoxMaxX - entity.boundingBoxMinX;
+    var height = entity.boundingBoxMaxY - entity.boundingBoxMinY;
 
-  var labelText = document.createTextNode(entity.text);
-  labelElement.appendChild(labelText);
-  parent.appendChild(labelElement);
-  console.log("Label generated!");
+    labelElement.style.width = width + "px";
+    labelElement.style.height = height + "px";
+
+    var labelText = document.createTextNode(entity.text);
+    labelElement.appendChild(labelText);
+    parent.appendChild(labelElement);
+    console.log("Label generated!");
 }
 
+function GenerateRadioButton(entity, parent){
+    
+    console.log("Generating RadioControl...");
+    var radioElement = document.createElement("INPUT");
+    radioElement.setAttribute("type", "radio");
+    radioElement.setAttribute("id", entity.id);
 
-// Tesseract
-function RunTesseract(Tesseract) {
-  
-    const exampleImage = imgElement.src;
+    radioElement.style.position = "absolute";
+    radioElement.style.left = entity.x - entity.radius+ "px";
+    radioElement.style.top = entity.y - entity.radius + "px";
 
-    const worker = Tesseract.createWorker({
-    logger: m => console.log(m)
-    });
-    Tesseract.setLogging(true);
-    work();    
+    radioElement.style.width = entity.radius * 2  + "px";
+    radioElement.style.height = entity.radius * 2 + "px";
 
-    async function work() {
-        await worker.load();
-        await worker.loadLanguage('eng');
-        await worker.initialize('eng');
-
-        let result = await worker.detect(exampleImage);
-        console.log(result.data);
-
-        result = await worker.recognize(exampleImage);
-
-        TextResult = result.data;
-        
-        let rectangleColor = new cv.Scalar(255, 0, 0);
-        
-        console.log(TextResult);
-        
-        
-        for (let i = 0; i < TextResult.words.length; i++) {
-
-            word = TextResult.words[i];
-            
-            console.log(word);
-            p1 = new cv.Point(word.bbox.x0 / ImageScale[0], word.bbox.y0 / ImageScale[1]);
-            p2 = new cv.Point(word.bbox.x1 / ImageScale[0], word.bbox.y1 / ImageScale[1]);
-            
-            cv.rectangle(output, p1, p2, rectangleColor, 1, cv.LINE_AA, 0);
-        }
-        cv.imshow('imageCanvas', output);
-        
-        //console.log(result.data);
-        await worker.terminate();
-    }
+    parent.appendChild(radioElement);
+    console.log("radio generated!");
 }
 
 function createUUID() {
