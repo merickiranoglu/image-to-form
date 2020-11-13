@@ -12,10 +12,26 @@ let process;
 let output;
 
 let entities = [];
+let childEntities = []; 
 let threshold = 200;
 
 let TextResult;
 let ImageScale;
+
+
+
+/**
+ * 
+ * TODO: 
+ * 
+ * 1 -  refactor AddContour function
+ * 2 -  More or less text, form and children in form are detected.
+ *      need to implement set of rules ( if single text inside form => button etc.)
+ *      when creating form entities.
+ *      Dont forget to add children to another array.
+ * 3 -  Acceleration data structure for fast searching and comparison, KD-Tree, BVH or quadtree 
+ * 
+ *  */ 
 
 
 
@@ -32,9 +48,8 @@ imgElement.onload = async function() {
     ImageScale = [this.naturalWidth / this.width, this.naturalHeight / this.height];
     
     RunOpenCV();
-    await RunTesseract(Tesseract);
+    //await RunTesseract(Tesseract);
     DrawEntities(output);
-    
     BuildForms();    
 }
 
@@ -42,65 +57,96 @@ imgElement.onload = async function() {
 async function RunOpenCV(){
     
     BuildGrayScaleProcessImage(200, 255);
-    AddContours();
+    AddContours(process);
     AddCircles();
     
 }
 
 function BuildGrayScaleProcessImage(low, high){
     
-    cv.cvtColor(process, process, cv.COLOR_RGBA2GRAY, 0);
-    cv.threshold(process, process, low, high, cv.THRESH_BINARY);
-}
-
-function AddContours(){
+    cv.cvtColor(process, process, cv.COLOR_RGBA2GRAY, 2);
     
-    let contours = FindContours(process);
-    for (let i = 0; i < contours.size(); i++) {
-        
-        const contour = contours.get(i);
-        if (cv.contourArea(contour, false) > threshold) {
-            let rect = cv.boundingRect(contour);
-            
-            entities.push( 
-            {
-                type : 'contour',
-                boundingBoxMinX : rect.x,
-                boundingBoxMinY : rect.y,
-                boundingBoxMaxX : rect.x + rect.width,
-                boundingBoxMaxY : rect.y + rect.height,
-                id : createUUID()
-            });
-        }
-    }
+    //let ksize = new cv.Size(0,0);
+    //cv.GaussianBlur(process, process, ksize, 0, 0, cv.BORDER_DEFAULT);
+    //cv.addWeighted(process, -1.5, process, 0.5, 0, process);
+    cv.addWeighted(process, 0.2, process, 0.8, 0, process);
+    
+    cv.threshold(process, process, low, high, cv.THRESH_BINARY);
+    cv.imshow('imageCanvas', process);
+
+    //cv.imshow('imageCanvas', process);
 }
 
-function FindContours(dst){
+function AddContours(dst){
     
     let contours = new cv.MatVector();
     let hierarchy = new cv.Mat();
+    let poly = new cv.MatVector();
+    
     cv.findContours(
         dst, contours,
-        hierarchy, cv.RETR_TREE,
+        hierarchy, 
+        cv.RETR_TREE,
         cv.CHAIN_APPROX_SIMPLE
     );
-        
-    return contours;
-}
-
-function FindApproximatePolies(contours){
     
-    let approxPolys = new cv.Mat();
-    let poly = new cv.MatVector();
-    for (let i = 0; i < contours.size(); i++) 
-    {
+    for (let i = 0; i < contours.size(); ++i) {
+        
         let cnt = contours.get(i);
-        console.log(cnt)
-        cv.approxPolyDP(cnt, approxPolys, 0.01 * cv.arcLength(cnt, true), true);
-        poly.push_back(approxPolys);
+        
+        // hierarchy[next, previous, firstChild, parent]
+        let hier = hierarchy.intPtr(0 , i);
+        let area = cv.contourArea(cnt, false);
+        
+        //Detects form element boundaries
+        if(hier[3] !== -1)
+        {
+            let parent = contours.get(hier[3]);
+            let parentArea = cv.contourArea(parent, false);
+            if(area / parentArea < 0.1 && area > 300)            
+            {
+                let rect = cv.boundingRect(cnt);
+                entities.push( 
+                {
+                    type : 'boundary',
+                    boundingBoxMinX : rect.x,
+                    boundingBoxMinY : rect.y,
+                    boundingBoxMaxX : rect.x + rect.width,
+                    boundingBoxMaxY : rect.y + rect.height,
+                    id : createUUID()
+                });
+                //cv.drawContours(output, contours, i, new cv.Scalar(0,0,255), 0.5, 32, hierarchy, 0);                    
+            }
+        }
+        
+        // find single children with no children 
+        if(hier[3] !== -1 && hier[2] === -1 && (hier[0] === -1 && hier[1] === -1))
+        {
+            let parent = contours.get(hier[3]);
+            let parentArea = cv.contourArea(parent, false);
+            if(area / parentArea < 0.6 && area / parentArea > 0.05)             
+            {
+                let approxPolys = new cv.Mat();
+                cv.approxPolyDP(cnt, approxPolys, 3, true);
+                
+                console.log(approxPolys.data32S);
+                
+                entities.push( 
+                {
+                    type : 'child',
+                    points : approxPolys.data32S,
+                    id : createUUID()
+                });
+                //cv.drawContours(output, contours, i, new cv.Scalar(0,0,255), 0.5, 32, hierarchy, 0);                    
+            }
+        }
+        
+        //cnt.delete();  
+        //tmp.delete();
     }
     
-    return poly;
+    cv.imshow('imageCanvas', output);
+    return contours;
 }
 
 function AddCircles(){
@@ -183,7 +229,8 @@ function DrawEntities(target){
             let center = new cv.Point(entity.x, entity.y);
             cv.circle(target, center, entity.radius, [0, 255,0,255], 3);    
         }
-        else{
+        else 
+        {
             
             let color = entity.type === 'word' ? wordColor : rectangleColor;
             let p1 = new cv.Point(entity.boundingBoxMinX, entity.boundingBoxMinY);
@@ -232,7 +279,7 @@ function GenerateFormElement(entity, parent){
     
     var forms = { 
         'word': GenerateLabel,
-        'contour': GenerateTextbox,
+        'boundary': GenerateTextbox,
         'button' : GenerateButton,
         'circle' : GenerateRadioButton
     }
